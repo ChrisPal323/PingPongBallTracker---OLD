@@ -18,17 +18,19 @@ using namespace cv;
 
 char buffer[16];
 
-int xpos;
-int ypos;
+#define SIZE 16
+Vec2i Dirs[SIZE];
+int front = 0;
+int rear = 0;
+int dirsCount;
 
-#define SIZE 2
-int Xcord[SIZE];
-int Ycord[SIZE];
-int front = -1;
-int rear = -1;
+Vec2i curAvg;
 
-int prevX;
-int prevY;
+int xCur;
+int yCur;
+
+int xPrev;
+int yPrev;
 
 //our sensitivity value to be used in the absdiff() function
 const static int SENSITIVITY_VALUE = 50;
@@ -51,70 +53,50 @@ string intToString(int number) {
 	return ss.str();
 }
 
-
-void enqueue(int value)
+Vec2i rollingAvg(Vec2f& sum, Vec2i removed, Vec2i added)
 {
-	//queue is full
-	if ((rear + 1) % SIZE == front) {
-		if (front == rear)
-			front = rear = -1;
-		else
-			front = (front + 1) % SIZE;
-
-		//first element inserted
-		if (front == -1)
-			front = 0;
-		//insert element at rear
-		rear = (rear + 1) % SIZE;
-		Xcord[rear] = value;
-		Ycord[rear] = value;
+	if (removed[0] == -1 && removed[1] == -1) {
+		//nothing here 
 	}
-	else
-	{
-		//first element inserted
-		if (front == -1)
-			front = 0;
-		//insert element at rear
-		rear = (rear + 1) % SIZE;
-		Xcord[rear] = value;
-		Ycord[rear] = value;
+	else {
+		sum -= removed;
+	}
+
+	sum += added;
+
+	return sum / (float)dirsCount;
+
+}
+
+/*
+Enqueues a new direction vector into the global Vec array 
+
+	Param: newDir - Direction to enqueue 
+*/
+Vec2i enqueue(Vec2i newDir)
+{
+	if (dirsCount == SIZE) {
+		front = (front + 1) % SIZE;
+	}
+	else {
+		dirsCount++;
+	}
+
+	//store soon to be removed Vec
+	Vec2i removed = Dirs[rear];
+
+	//insert element at rear
+	Dirs[rear] = newDir;
+	rear = (rear + 1) % SIZE;
+
+	if (dirsCount == SIZE) {
+		return removed;
+	}
+	else {
+		return -1;
 	}
 }
 
-void showVals()
-{
-	if (rear == 1) {
-		cout << "X : ";
-		prevX = Xcord[0];
-		cout << Xcord[0];
-		cout << " -> ";
-		cout << Xcord[1];
-
-		cout << " ";
-
-		cout << "Y : ";
-		cout << Ycord[0];
-		prevY = Ycord[0];
-		cout << " -> ";
-		cout << Ycord[1] << endl;
-	}
-
-	if (rear == 0) {
-		cout << "X : ";
-		prevX = Xcord[1];
-		cout << Xcord[1];
-		cout << " -> ";
-		cout << Xcord[0];
-
-		cout << " ";
-
-		cout << "Y : ";
-		prevY = Ycord[1];
-		cout << Ycord[1];
-		cout << " -> ";
-		cout << Ycord[0] << endl;
-	}
-}
 
 void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 	//notice how we use the '&' operator for objectDetected and cameraFeed. This is because we wish
@@ -127,7 +109,7 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 	vector< vector<Point> > contours;
 	vector<Vec4i> hierarchy;
 	//find contours of filtered image using openCV findContours function
-	//findContours(temp,contours,hierarchy,CV_RETR_CCOMP,CV_CHAIN_APPROX_SIMPLE );// retrieves all contours
+	//findContours(temp,contours,hierarchy,cv::RETR_CCOMP,cv::CHAIN_APPROX_SIMPLE );// retrieves all contours
 	findContours(temp, contours, hierarchy, cv:: RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);// retrieves external contours
 
 	//if contours vector is not empty, we have found some objects
@@ -143,8 +125,9 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 		//this will be the object's final estimated position.
 		objectBoundingRectangle = boundingRect(largestContourVec.at(0));
 	}
-	//circle the object
-	circle(cameraFeed, Point(objectBoundingRectangle.x + objectBoundingRectangle.width / 2, objectBoundingRectangle.y + objectBoundingRectangle.height / 2), 20, Scalar(0, 255, 0), 2);
+
+		// circle the tracked object
+		circle(cameraFeed, Point(objectBoundingRectangle.x + objectBoundingRectangle.width / 2, objectBoundingRectangle.y + objectBoundingRectangle.height / 2), 20, Scalar(0, 255, 0), 2);
 }
 int main() {
 
@@ -182,6 +165,8 @@ int main() {
 	else {
 		cout << "Error in port name" << endl << endl;
 	}
+
+	Vec2f sum = 0;
 
 	while (1) {
 
@@ -239,16 +224,24 @@ int main() {
 
 				searchForMovement(thresholdImage, frame1);
 
-				xpos = objectBoundingRectangle.x + objectBoundingRectangle.width / 2;
-				ypos = objectBoundingRectangle.y + objectBoundingRectangle.height / 2;
+				xPrev = xCur;
+				yPrev = yCur;
 
-				sprintf_s(buffer, "%d,%d", xpos, ypos);
+				xCur = objectBoundingRectangle.x + objectBoundingRectangle.width / 2;
+				yCur = objectBoundingRectangle.y + objectBoundingRectangle.height / 2;
+
+				//
+				Vec2i Dir(xCur - xPrev, yCur - yPrev);
+
+				//calc rolling avg
+				curAvg = rollingAvg(sum, enqueue(Dir), Dir);
+
+				//output
+				cout << "AVERAGE" << curAvg << endl;\
+
+				//write to arduino
+				sprintf_s(buffer, "%d,%d", xCur, yCur);
 				arduino.writeSerialPort(buffer, strlen(buffer));
-				
-				enqueue(xpos);
-				enqueue(ypos);
-
-				showVals();
 			}
 
 			//show our captured frame
