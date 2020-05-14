@@ -150,7 +150,14 @@ int main() {
 	//video capture object.
 	VideoCapture capture1;
 
-	capture1.open(1);
+	capture1.set(cv::CAP_PROP_FPS, 120);
+	//capture1.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'));
+	//capture1.set(cv2.CAP_PROP_SETTINGS, 1);
+	//capture1.set(cv2.CAP_PROP_EXPOSURE, -12);
+	capture1.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+	capture1.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+
+	capture1.open(1+ cv::CAP_DSHOW);
 
 	if (!capture1.isOpened()) {
 		cout << "ERROR ACQUIRING VIDEO FEED\n";
