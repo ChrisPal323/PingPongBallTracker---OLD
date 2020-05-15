@@ -7,7 +7,6 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
-#include <GLFW/glfw3.h>
 #include <deque>
 
 #include "SerialPort.h"
@@ -18,22 +17,30 @@ using namespace cv;
 
 char buffer[16];
 
-#define SIZE 16
+#define SIZE 4
 Vec2i Dirs[SIZE];
 int front = 0;
 int rear = 0;
 int dirsCount;
 
+cv::Point ballPosition(0, 0);
+
+//rolling vector buffer
 Vec2i curAvg;
 
+//cur pos
 int xCur;
 int yCur;
 
+//prev pos
 int xPrev;
 int yPrev;
 
+//tracking distance sens
+int distThres = 30;
+
 //our sensitivity value to be used in the absdiff() function
-const static int SENSITIVITY_VALUE = 50;
+const static int SENSITIVITY_VALUE = 40;
 //size of blur used to smooth the intensity image output from absdiff() function
 const static int BLUR_SIZE = 10;
 //we'll have just one object to search for
@@ -97,7 +104,6 @@ Vec2i enqueue(Vec2i newDir)
 	}
 }
 
-
 void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 	//notice how we use the '&' operator for objectDetected and cameraFeed. This is because we wish
 	//to take the values passed into the function and manipulate them, rather than just working with a copy.
@@ -125,10 +131,96 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 		//this will be the object's final estimated position.
 		objectBoundingRectangle = boundingRect(largestContourVec.at(0));
 	}
-
-		// circle the tracked object
-		circle(cameraFeed, Point(objectBoundingRectangle.x + objectBoundingRectangle.width / 2, objectBoundingRectangle.y + objectBoundingRectangle.height / 2), 20, Scalar(0, 255, 0), 2);
+	ballPosition.x = objectBoundingRectangle.x + objectBoundingRectangle.width / 2;
+	ballPosition.y = objectBoundingRectangle.y + objectBoundingRectangle.height / 2;
 }
+
+cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
+	cv::Point predictedPosition;        // this will be the return value
+	int numPositions;
+
+	numPositions = positions.size();
+
+	if (numPositions == 0) {
+
+		std::cout << "error, predictNextPosition was called with zero points\n";
+
+	}
+	else if (numPositions == 1) {
+
+		return(positions[0]);
+
+	}
+	else if (numPositions == 2) {
+
+		int deltaX = positions[1].x - positions[0].x;
+		int deltaY = positions[1].y - positions[0].y;
+
+		predictedPosition.x = positions.back().x + deltaX;
+		predictedPosition.y = positions.back().y + deltaY;
+
+	}
+	else if (numPositions == 3) {
+
+		int sumOfXChanges = ((positions[2].x - positions[1].x) * 2) +
+			((positions[1].x - positions[0].x) * 1);
+
+		int deltaX = (int)std::round((float)sumOfXChanges / 3.0);
+
+		int sumOfYChanges = ((positions[2].y - positions[1].y) * 2) +
+			((positions[1].y - positions[0].y) * 1);
+
+		int deltaY = (int)std::round((float)sumOfYChanges / 3.0);
+
+		predictedPosition.x = positions.back().x + deltaX;
+		predictedPosition.y = positions.back().y + deltaY;
+
+	}
+	else if (numPositions == 4) {
+
+		int sumOfXChanges = ((positions[3].x - positions[2].x) * 3) +
+			((positions[2].x - positions[1].x) * 2) +
+			((positions[1].x - positions[0].x) * 1);
+
+		int deltaX = (int)std::round((float)sumOfXChanges / 6.0);
+
+		int sumOfYChanges = ((positions[3].y - positions[2].y) * 3) +
+			((positions[2].y - positions[1].y) * 2) +
+			((positions[1].y - positions[0].y) * 1);
+
+		int deltaY = (int)std::round((float)sumOfYChanges / 6.0);
+
+		predictedPosition.x = positions.back().x + deltaX;
+		predictedPosition.y = positions.back().y + deltaY;
+
+	}
+	else if (numPositions >= 5) {
+
+		int sumOfXChanges = ((positions[numPositions - 1].x - positions[numPositions - 2].x) * 4) +
+			((positions[numPositions - 2].x - positions[numPositions - 3].x) * 3) +
+			((positions[numPositions - 3].x - positions[numPositions - 4].x) * 2) +
+			((positions[numPositions - 4].x - positions[numPositions - 5].x) * 1);
+
+		int deltaX = (int)std::round((float)sumOfXChanges / 10.0);
+
+		int sumOfYChanges = ((positions[numPositions - 1].y - positions[numPositions - 2].y) * 4) +
+			((positions[numPositions - 2].y - positions[numPositions - 3].y) * 3) +
+			((positions[numPositions - 3].y - positions[numPositions - 4].y) * 2) +
+			((positions[numPositions - 4].y - positions[numPositions - 5].y) * 1);
+
+		int deltaY = (int)std::round((float)sumOfYChanges / 10.0);
+
+		predictedPosition.x = positions.back().x + deltaX;
+		predictedPosition.y = positions.back().y + deltaY;
+
+	}
+	else {
+		// should never get here
+	}
+
+	return(predictedPosition);
+}
+
 int main() {
 
 	//some boolean variables for added functionality
@@ -150,14 +242,8 @@ int main() {
 	//video capture object.
 	VideoCapture capture1;
 
-	capture1.set(cv::CAP_PROP_FPS, 120);
-	//capture1.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'));
-	//capture1.set(cv2.CAP_PROP_SETTINGS, 1);
-	//capture1.set(cv2.CAP_PROP_EXPOSURE, -12);
-	capture1.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-	capture1.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
-
-	capture1.open(1+ cv::CAP_DSHOW);
+	//cap image
+	capture1.open(0 + cv::CAP_DSHOW);
 
 	if (!capture1.isOpened()) {
 		cout << "ERROR ACQUIRING VIDEO FEED\n";
@@ -174,6 +260,16 @@ int main() {
 	}
 
 	Vec2f sum = 0;
+
+	capture1.set(cv::CAP_PROP_FPS, 10);
+	//capture1.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'));
+	//capture1.set(cv2.CAP_PROP_SETTINGS, 1);
+	//capture1.set(cv2.CAP_PROP_EXPOSURE, -12);
+	capture1.set(cv::CAP_PROP_FRAME_WIDTH, 352);
+	capture1.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
+
+	std::vector<cv::Point> ballPositions;
+	cv::Point predictedBallPosition;
 
 	while (1) {
 
@@ -231,24 +327,20 @@ int main() {
 
 				searchForMovement(thresholdImage, frame1);
 
-				xPrev = xCur;
-				yPrev = yCur;
+				ballPositions.push_back(ballPosition);
+				predictedBallPosition = predictNextPosition(ballPositions);
 
-				xCur = objectBoundingRectangle.x + objectBoundingRectangle.width / 2;
-				yCur = objectBoundingRectangle.y + objectBoundingRectangle.height / 2;
+				std::cout << "current position        = " << ballPositions.back().x << ", " << ballPositions.back().y << "\n";
+				std::cout << "next predicted position = " << predictedBallPosition.x << ", " << predictedBallPosition.y << "\n";
+				std::cout << "--------------------------------------------------\n";
+			
+				circle(frame1, ballPositions.back(), 30, Scalar(0, 0, 255), 2, 8, 0);
+				circle(frame1, predictedBallPosition, 30, Scalar(0,255,0), 2, 8, 0);
 
-				//
-				Vec2i Dir(xCur - xPrev, yCur - yPrev);
 
-				//calc rolling avg
-				curAvg = rollingAvg(sum, enqueue(Dir), Dir);
-
-				//output
-				cout << "AVERAGE" << curAvg << endl;\
-
-				//write to arduino
-				sprintf_s(buffer, "%d,%d", xCur, yCur);
-				arduino.writeSerialPort(buffer, strlen(buffer));
+					//write to arduino
+					sprintf_s(buffer, "%d,%d", xCur, yCur);
+					arduino.writeSerialPort(buffer, strlen(buffer));
 			}
 
 			//show our captured frame
