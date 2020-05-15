@@ -17,27 +17,9 @@ using namespace cv;
 
 char buffer[16];
 
-#define SIZE 4
-Vec2i Dirs[SIZE];
-int front = 0;
-int rear = 0;
-int dirsCount;
+float estVel;
 
 cv::Point ballPosition(0, 0);
-
-//rolling vector buffer
-Vec2i curAvg;
-
-//cur pos
-int xCur;
-int yCur;
-
-//prev pos
-int xPrev;
-int yPrev;
-
-//tracking distance sens
-int distThres = 30;
 
 //our sensitivity value to be used in the absdiff() function
 const static int SENSITIVITY_VALUE = 40;
@@ -58,50 +40,6 @@ string intToString(int number) {
 	std::stringstream ss;
 	ss << number;
 	return ss.str();
-}
-
-Vec2i rollingAvg(Vec2f& sum, Vec2i removed, Vec2i added)
-{
-	if (removed[0] == -1 && removed[1] == -1) {
-		//nothing here 
-	}
-	else {
-		sum -= removed;
-	}
-
-	sum += added;
-
-	return sum / (float)dirsCount;
-
-}
-
-/*
-Enqueues a new direction vector into the global Vec array 
-
-	Param: newDir - Direction to enqueue 
-*/
-Vec2i enqueue(Vec2i newDir)
-{
-	if (dirsCount == SIZE) {
-		front = (front + 1) % SIZE;
-	}
-	else {
-		dirsCount++;
-	}
-
-	//store soon to be removed Vec
-	Vec2i removed = Dirs[rear];
-
-	//insert element at rear
-	Dirs[rear] = newDir;
-	rear = (rear + 1) % SIZE;
-
-	if (dirsCount == SIZE) {
-		return removed;
-	}
-	else {
-		return -1;
-	}
 }
 
 void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
@@ -135,6 +73,8 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 	ballPosition.y = objectBoundingRectangle.y + objectBoundingRectangle.height / 2;
 }
 
+
+//Weighted avgerage for predicitons 
 cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 	cv::Point predictedPosition;        // this will be the return value
 	int numPositions;
@@ -259,9 +199,7 @@ int main() {
 		cout << "Error in port name" << endl << endl;
 	}
 
-	Vec2f sum = 0;
-
-	capture1.set(cv::CAP_PROP_FPS, 10);
+	capture1.set(cv::CAP_PROP_FPS, 260);
 	//capture1.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'));
 	//capture1.set(cv2.CAP_PROP_SETTINGS, 1);
 	//capture1.set(cv2.CAP_PROP_EXPOSURE, -12);
@@ -330,17 +268,15 @@ int main() {
 				ballPositions.push_back(ballPosition);
 				predictedBallPosition = predictNextPosition(ballPositions);
 
-				std::cout << "current position        = " << ballPositions.back().x << ", " << ballPositions.back().y << "\n";
-				std::cout << "next predicted position = " << predictedBallPosition.x << ", " << predictedBallPosition.y << "\n";
-				std::cout << "--------------------------------------------------\n";
-			
 				circle(frame1, ballPositions.back(), 30, Scalar(0, 0, 255), 2, 8, 0);
+				line(frame1, ballPositions.back(), predictedBallPosition, Scalar(255, 0, 0), 2, 8, 0);
 				circle(frame1, predictedBallPosition, 30, Scalar(0,255,0), 2, 8, 0);
 
+				estVel = abs(sqrt(pow(predictedBallPosition.x - ballPosition.x, 2) + pow(predictedBallPosition.y - ballPosition.y, 2) * 1.0));
 
 					//write to arduino
-					sprintf_s(buffer, "%d,%d", xCur, yCur);
-					arduino.writeSerialPort(buffer, strlen(buffer));
+					//sprintf_s(buffer, "%d,%d", 0, 0);
+					//arduino.writeSerialPort(buffer, strlen(buffer));
 			}
 
 			//show our captured frame
