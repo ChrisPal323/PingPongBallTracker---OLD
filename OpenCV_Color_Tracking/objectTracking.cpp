@@ -22,6 +22,8 @@ char buffer[16];
 Mat intrinsic = Mat::eye(3, 3, CV_64F);
 Mat distCoeffs;
 
+cv::Mat map1, map2;
+
 VideoCapture capture;
 
 cv::Point ballPosition(0, 0);
@@ -166,7 +168,7 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 }
 
 //uses 9x6 chessboard to calibrate fisheye lens distortion 
-int Calibrate()
+void Calibrate()
 {
 	static int numBoards = 2;
 	static int numCornersHor = 9;
@@ -225,15 +227,14 @@ int Calibrate()
 		}
 	}
 
-   	vector<Mat> rvecs;
+	vector<Mat> rvecs;
 	vector<Mat> tvecs;
-
 	intrinsic.ptr<float>(0)[0] = 1;
 	intrinsic.ptr<float>(1)[1] = 1;
 
 	calibrateCamera(object_points, image_points, image.size(), intrinsic, distCoeffs, rvecs, tvecs);
+	cv::initUndistortRectifyMap(intrinsic, distCoeffs, Mat_<double>::eye(3, 3), intrinsic, cv::Size(720, 480), CV_16SC2, map1, map2);
 	cv::destroyWindow("CalibrateME!");
-	return 0;
 }
 
 int main() {
@@ -257,8 +258,8 @@ int main() {
 	Mat differenceImage;
 	//thresholded difference image (for use in findContours() function)
 	Mat thresholdImage;
-
-	Mat temp1, temp2;
+	//final Mat
+	Mat Final;
 
 	//cap image
 	capture.open(0 + cv::CAP_DSHOW);
@@ -279,8 +280,6 @@ int main() {
 
 	capture.set(cv::CAP_PROP_SETTINGS, 1);
 	capture.set(cv::CAP_PROP_FPS, 260);
-	capture.set(cv::CAP_PROP_FRAME_WIDTH, 352);
-	capture.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
 
 	std::vector<cv::Point> ballPositions;
 	cv::Point predictedBallPosition;
@@ -288,15 +287,13 @@ int main() {
 	while (1) {
 
 		//read first frame
-		capture.read(temp1);
+		capture.read(frame1);
 		//undistorts each frame
-		undistort(temp1, frame1, intrinsic, distCoeffs);
 		//convert frame1 to gray scale for frame differencing
 		cv::cvtColor(frame1, grayImage1, COLOR_BGR2GRAY);
 		//copy second frame
-		capture.read(temp2);
+		capture.read(frame2);
 		//undistorts each frame
-		undistort(temp2, frame2, intrinsic, distCoeffs);
 		//convert frame2 to gray scale for frame differencing
 		cv::cvtColor(frame2, grayImage2, COLOR_BGR2GRAY);
 
@@ -352,7 +349,8 @@ int main() {
 		}
 
 		//show our captured frame
-		imshow("Frame1", frame1);
+		cv::remap(frame1, Final, map1, map2, INTER_LINEAR, BORDER_CONSTANT);
+		imshow("Final", Final);
 
 		//check to see if a button has been pressed.
 		//this 10ms delay is necessary for proper operation of this program
@@ -398,4 +396,3 @@ int main() {
 	return 0;
 
 }
-
