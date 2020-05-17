@@ -7,6 +7,8 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include<opencv2/calib3d/calib3d.hpp>
+#include<opencv2/calib3d/calib3d_c.h>
 #include <deque>
 
 #include "SerialPort.h"
@@ -17,7 +19,10 @@ using namespace cv;
 
 char buffer[16];
 
-float estVel;
+Mat intrinsic = Mat::eye(3, 3, CV_64F);
+Mat distCoeffs;
+
+VideoCapture capture;
 
 cv::Point ballPosition(0, 0);
 
@@ -31,7 +36,6 @@ const static int BLUR_SIZE = 10;
 Rect objectBoundingRectangle = Rect(0, 0, 0, 0);
 
 char commport[] = "\\\\.\\COM4";
-
 
 //int to string helper function
 string intToString(int number) {
@@ -54,7 +58,7 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 	vector<Vec4i> hierarchy;
 	//find contours of filtered image using openCV findContours function
 	//findContours(temp,contours,hierarchy,cv::RETR_CCOMP,cv::CHAIN_APPROX_SIMPLE );// retrieves all contours
-	findContours(temp, contours, hierarchy, cv:: RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);// retrieves external contours
+	findContours(temp, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);// retrieves external contours
 
 	//if contours vector is not empty, we have found some objects
 	if (contours.size() > 0)objectDetected = true;
@@ -161,7 +165,81 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 	return(predictedPosition);
 }
 
+//uses 9x6 chessboard to calibrate fisheye lens distortion 
+int Calibrate()
+{
+	static int numBoards = 2;
+	static int numCornersHor = 9;
+	static int numCornersVer = 6;
+
+	int numSquares = numCornersHor * numCornersVer;
+	Size board_sz = Size(numCornersHor, numCornersVer);
+
+	capture = VideoCapture(0 + CAP_DSHOW);
+
+	vector<vector<Point3f>> object_points;
+	vector<vector<Point2f>> image_points;
+
+	vector<Point2f> corners;
+	int successes = 0;
+
+	Mat image;
+	Mat gray_image;
+	capture >> image;
+
+	vector<Point3f> obj;
+	for (int j = 0; j < numSquares; j++)
+		obj.push_back(Point3f(j / numCornersHor, j % numCornersHor, 0.0f));
+
+	while (successes < numBoards)
+	{
+		cvtColor(image, gray_image, COLOR_BGR2GRAY);
+
+		bool found = findChessboardCorners(image, board_sz, corners, CV_CALIB_CB_ADAPTIVE_THRESH | CV_CALIB_CB_FILTER_QUADS | CV_CALIB_CB_FAST_CHECK);
+
+		if (found)
+		{
+			cornerSubPix(gray_image, corners, Size(11, 11), Size(-1, -1), TermCriteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 30, 0.1));
+			drawChessboardCorners(image, board_sz, corners, found);
+		}
+		imshow("CalibrateME!", image);
+
+		capture >> image;
+		int key = waitKey(1);
+
+		if (key == 27)
+
+			break;
+
+		if (key == ' ' && found != 0)
+		{
+			image_points.push_back(corners);
+			object_points.push_back(obj);
+
+			printf("Snap stored!");
+
+			successes++;
+
+			if (successes >= numBoards)
+				continue;
+		}
+	}
+
+   	vector<Mat> rvecs;
+	vector<Mat> tvecs;
+
+	intrinsic.ptr<float>(0)[0] = 1;
+	intrinsic.ptr<float>(1)[1] = 1;
+
+	calibrateCamera(object_points, image_points, image.size(), intrinsic, distCoeffs, rvecs, tvecs);
+	cv::destroyWindow("CalibrateME!");
+	return 0;
+}
+
 int main() {
+
+	//calls the calibrate and stores the coeffs and intrisics in their respected variables
+	Calibrate();
 
 	//some boolean variables for added functionality
 	bool objectDetected = false;
@@ -179,13 +257,13 @@ int main() {
 	Mat differenceImage;
 	//thresholded difference image (for use in findContours() function)
 	Mat thresholdImage;
-	//video capture object.
-	VideoCapture capture1;
+
+	Mat temp1, temp2;
 
 	//cap image
-	capture1.open(0 + cv::CAP_DSHOW);
+	capture.open(0 + cv::CAP_DSHOW);
 
-	if (!capture1.isOpened()) {
+	if (!capture.isOpened()) {
 		cout << "ERROR ACQUIRING VIDEO FEED\n";
 		getchar();
 		return -1;
@@ -199,130 +277,125 @@ int main() {
 		cout << "Error in port name" << endl << endl;
 	}
 
-	capture1.set(cv::CAP_PROP_FPS, 260);
-	//capture1.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'));
-	//capture1.set(cv2.CAP_PROP_SETTINGS, 1);
-	//capture1.set(cv2.CAP_PROP_EXPOSURE, -12);
-	capture1.set(cv::CAP_PROP_FRAME_WIDTH, 352);
-	capture1.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
+	capture.set(cv::CAP_PROP_SETTINGS, 1);
+	capture.set(cv::CAP_PROP_FPS, 260);
+	capture.set(cv::CAP_PROP_FRAME_WIDTH, 352);
+	capture.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
 
 	std::vector<cv::Point> ballPositions;
 	cv::Point predictedBallPosition;
 
 	while (1) {
 
-		//we can loop the video by re-opening the capture every time the video reaches its last frame
+		//read first frame
+		capture.read(temp1);
+		//undistorts each frame
+		undistort(temp1, frame1, intrinsic, distCoeffs);
+		//convert frame1 to gray scale for frame differencing
+		cv::cvtColor(frame1, grayImage1, COLOR_BGR2GRAY);
+		//copy second frame
+		capture.read(temp2);
+		//undistorts each frame
+		undistort(temp2, frame2, intrinsic, distCoeffs);
+		//convert frame2 to gray scale for frame differencing
+		cv::cvtColor(frame2, grayImage2, COLOR_BGR2GRAY);
 
-		//check if the video has reach its last frame.
-		//we add '-1' because we are reading two frames from the video at a time.
-		//if this is not included, we get a memory error!
+		//perform frame differencing with the sequential images. This will output an "intensity image"
+		//do not confuse this with a threshold image, we will need to perform thresholding afterwards.
+		cv::absdiff(grayImage1, grayImage2, differenceImage);
 
-			//read first frame
-			capture1.read(frame1);
-			//convert frame1 to gray scale for frame differencing
-			cv::cvtColor(frame1, grayImage1, COLOR_BGR2GRAY);
-			//copy second frame
-			capture1.read(frame2);
-			//convert frame2 to gray scale for frame differencing
-			cv::cvtColor(frame2, grayImage2, COLOR_BGR2GRAY);
+		//threshold intensity image at a given sensitivity value
+		cv::threshold(differenceImage, thresholdImage, SENSITIVITY_VALUE, 255, THRESH_BINARY);
 
-			//perform frame differencing with the sequential images. This will output an "intensity image"
-			//do not confuse this with a threshold image, we will need to perform thresholding afterwards.
-			cv::absdiff(grayImage1, grayImage2, differenceImage);
+		if (debugMode == true) {
+			//show the difference image and threshold image
+			cv::imshow("Difference Image", differenceImage);
+			cv::imshow("Threshold Image", thresholdImage);
 
-			//threshold intensity image at a given sensitivity value
-			cv::threshold(differenceImage, thresholdImage, SENSITIVITY_VALUE, 255, THRESH_BINARY);
+		}
+		else {
+			//if not in debug mode, destroy the windows so we don't see them anymore
+			cv::destroyWindow("Difference Image");
+			cv::destroyWindow("Threshold Image");
+		}
+		//blur the image to get rid of the noise. This will output an intensity image
+		cv::blur(thresholdImage, thresholdImage, cv::Size(BLUR_SIZE, BLUR_SIZE));
+		//threshold again to obtain binary image from blur output
+		cv::threshold(thresholdImage, thresholdImage, SENSITIVITY_VALUE, 255, THRESH_BINARY);
 
-			if (debugMode == true) {
-				//show the difference image and threshold image
-				cv::imshow("Difference Image", differenceImage);
-				cv::imshow("Threshold Image", thresholdImage);
+		if (debugMode == true) {
+			//show the threshold image after it's been "blurred"
 
-			}
-			else {
-				//if not in debug mode, destroy the windows so we don't see them anymore
-				cv::destroyWindow("Difference Image");
-				cv::destroyWindow("Threshold Image");
-			}
-			//blur the image to get rid of the noise. This will output an intensity image
-			cv::blur(thresholdImage, thresholdImage, cv::Size(BLUR_SIZE, BLUR_SIZE));
-			//threshold again to obtain binary image from blur output
-			cv::threshold(thresholdImage, thresholdImage, SENSITIVITY_VALUE, 255, THRESH_BINARY);
+			imshow("Final Threshold Image", thresholdImage);
 
-			if (debugMode == true) {
-				//show the threshold image after it's been "blurred"
+		}
+		else {
+			//if not in debug mode, destroy the windows so we don't see them anymore
+			cv::destroyWindow("Final Threshold Image");
+		}
 
-				imshow("Final Threshold Image", thresholdImage);
+		//if tracking enabled, search for contours in our thresholded image
+		if (trackingEnabled) {
 
-			}
-			else {
-				//if not in debug mode, destroy the windows so we don't see them anymore
-				cv::destroyWindow("Final Threshold Image");
-			}
+			searchForMovement(thresholdImage, frame1);
 
-			//if tracking enabled, search for contours in our thresholded image
-			if (trackingEnabled) {
+			ballPositions.push_back(ballPosition);
+			predictedBallPosition = predictNextPosition(ballPositions);
 
-				searchForMovement(thresholdImage, frame1);
+			circle(frame1, ballPositions.back(), 30, Scalar(0, 0, 255), 2, 8, 0);
+			line(frame1, ballPositions.back(), predictedBallPosition, Scalar(255, 0, 0), 2, 8, 0);
+			circle(frame1, predictedBallPosition, 30, Scalar(0, 255, 0), 2, 8, 0);
 
-				ballPositions.push_back(ballPosition);
-				predictedBallPosition = predictNextPosition(ballPositions);
+			//write to arduino
+			//sprintf_s(buffer, "%d,%d", 0, 0);
+			//arduino.writeSerialPort(buffer, strlen(buffer));
+		}
 
-				circle(frame1, ballPositions.back(), 30, Scalar(0, 0, 255), 2, 8, 0);
-				line(frame1, ballPositions.back(), predictedBallPosition, Scalar(255, 0, 0), 2, 8, 0);
-				circle(frame1, predictedBallPosition, 30, Scalar(0,255,0), 2, 8, 0);
+		//show our captured frame
+		imshow("Frame1", frame1);
 
-				estVel = abs(sqrt(pow(predictedBallPosition.x - ballPosition.x, 2) + pow(predictedBallPosition.y - ballPosition.y, 2) * 1.0));
+		//check to see if a button has been pressed.
+		//this 10ms delay is necessary for proper operation of this program
+		//if removed, frames will not have enough time to referesh and a blank 
+		//image will appear.
+		switch (waitKey(10)) {
 
-					//write to arduino
-					//sprintf_s(buffer, "%d,%d", 0, 0);
-					//arduino.writeSerialPort(buffer, strlen(buffer));
-			}
-
-			//show our captured frame
-			imshow("Frame1", frame1);
-
-			//check to see if a button has been pressed.
-			//this 10ms delay is necessary for proper operation of this program
-			//if removed, frames will not have enough time to referesh and a blank 
-			//image will appear.
-			switch (waitKey(10)) {
-
-			case 27: //'esc' key has been pressed, exit program.
-				return 0;
-			case 116: //'t' has been pressed. this will toggle tracking
-				trackingEnabled = !trackingEnabled;
-				if (trackingEnabled == false) cout << "Tracking disabled." << endl;
-				else cout << "Tracking enabled." << endl;
-				break;
-			case 100: //'d' has been pressed. this will debug mode
-				debugMode = !debugMode;
-				if (debugMode == false) cout << "Debug mode disabled." << endl;
-				else cout << "Debug mode enabled." << endl;
-				break;
-			case 112: //'p' has been pressed. this will pause/resume the code.
-				pause = !pause;
-				if (pause == true) {
-					cout << "Code paused, press 'p' again to resume" << endl;
-					while (pause == true) {
-						//stay in this loop until 
-						switch (waitKey()) {
-							//a switch statement inside a switch statement? Mind blown.
-						case 112:
-							//change pause back to false
-							pause = false;
-							cout << "Code Resumed" << endl;
-							break;
-						}
+		case 27: //'esc' key has been pressed, exit program.
+			return 0;
+		case 116: //'t' has been pressed. this will toggle tracking
+			trackingEnabled = !trackingEnabled;
+			if (trackingEnabled == false) cout << "Tracking disabled." << endl;
+			else cout << "Tracking enabled." << endl;
+			break;
+		case 100: //'d' has been pressed. this will debug mode
+			debugMode = !debugMode;
+			if (debugMode == false) cout << "Debug mode disabled." << endl;
+			else cout << "Debug mode enabled." << endl;
+			break;
+		case 112: //'p' has been pressed. this will pause/resume the code.
+			pause = !pause;
+			if (pause == true) {
+				cout << "Code paused, press 'p' again to resume" << endl;
+				while (pause == true) {
+					//stay in this loop until 
+					switch (waitKey()) {
+						//a switch statement inside a switch statement? Mind blown.
+					case 112:
+						//change pause back to false
+						pause = false;
+						cout << "Code Resumed" << endl;
+						break;
 					}
 				}
-
-
-
 			}
+
+
+
+		}
 
 	}
 
 	return 0;
 
 }
+
