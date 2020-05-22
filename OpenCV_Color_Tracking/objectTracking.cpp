@@ -19,6 +19,9 @@ using namespace cv;
 
 char buffer[16];
 
+int deltaY;
+int deltaX;
+
 Mat intrinsic = Mat::eye(3, 3, CV_64F);
 Mat distCoeffs;
 
@@ -27,6 +30,7 @@ cv::Mat map1, map2;
 VideoCapture capture;
 
 cv::Point ballPosition(0, 0);
+cv::Point deltaPoint(0, 0);
 
 //our sensitivity value to be used in the absdiff() function
 const static int SENSITIVITY_VALUE = 40;
@@ -82,7 +86,7 @@ void searchForMovement(Mat thresholdImage, Mat& cameraFeed) {
 
 //Weighted avgerage for predicitons 
 cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
-	cv::Point predictedPosition;        // this will be the return value
+	cv::Point predictedPosition; // this will be the return value
 	int numPositions;
 
 	numPositions = positions.size();
@@ -99,8 +103,8 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 	}
 	else if (numPositions == 2) {
 
-		int deltaX = positions[1].x - positions[0].x;
-		int deltaY = positions[1].y - positions[0].y;
+		 deltaX = positions[1].x - positions[0].x;
+		 deltaY = positions[1].y - positions[0].y;
 
 		predictedPosition.x = positions.back().x + deltaX;
 		predictedPosition.y = positions.back().y + deltaY;
@@ -111,12 +115,12 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 		int sumOfXChanges = ((positions[2].x - positions[1].x) * 2) +
 			((positions[1].x - positions[0].x) * 1);
 
-		int deltaX = (int)std::round((float)sumOfXChanges / 3.0);
+		 deltaX = (int)std::round((float)sumOfXChanges / 3.0);
 
 		int sumOfYChanges = ((positions[2].y - positions[1].y) * 2) +
 			((positions[1].y - positions[0].y) * 1);
 
-		int deltaY = (int)std::round((float)sumOfYChanges / 3.0);
+		 deltaY = (int)std::round((float)sumOfYChanges / 3.0);
 
 		predictedPosition.x = positions.back().x + deltaX;
 		predictedPosition.y = positions.back().y + deltaY;
@@ -128,13 +132,13 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 			((positions[2].x - positions[1].x) * 2) +
 			((positions[1].x - positions[0].x) * 1);
 
-		int deltaX = (int)std::round((float)sumOfXChanges / 6.0);
+		 deltaX = (int)std::round((float)sumOfXChanges / 6.0);
 
 		int sumOfYChanges = ((positions[3].y - positions[2].y) * 3) +
 			((positions[2].y - positions[1].y) * 2) +
 			((positions[1].y - positions[0].y) * 1);
 
-		int deltaY = (int)std::round((float)sumOfYChanges / 6.0);
+		 deltaY = (int)std::round((float)sumOfYChanges / 6.0);
 
 		predictedPosition.x = positions.back().x + deltaX;
 		predictedPosition.y = positions.back().y + deltaY;
@@ -147,17 +151,18 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 			((positions[numPositions - 3].x - positions[numPositions - 4].x) * 2) +
 			((positions[numPositions - 4].x - positions[numPositions - 5].x) * 1);
 
-		int deltaX = (int)std::round((float)sumOfXChanges / 10.0);
+		 deltaX = (int)std::round((float)sumOfXChanges / 10.0);
 
 		int sumOfYChanges = ((positions[numPositions - 1].y - positions[numPositions - 2].y) * 4) +
 			((positions[numPositions - 2].y - positions[numPositions - 3].y) * 3) +
 			((positions[numPositions - 3].y - positions[numPositions - 4].y) * 2) +
 			((positions[numPositions - 4].y - positions[numPositions - 5].y) * 1);
 
-		int deltaY = (int)std::round((float)sumOfYChanges / 10.0);
+		 deltaY = (int)std::round((float)sumOfYChanges / 10.0);
 
 		predictedPosition.x = positions.back().x + deltaX;
 		predictedPosition.y = positions.back().y + deltaY;
+
 
 	}
 	else {
@@ -170,7 +175,7 @@ cv::Point predictNextPosition(std::vector<cv::Point>& positions) {
 //uses 9x6 chessboard to calibrate fisheye lens distortion 
 void Calibrate()
 {
-	static int numBoards = 2;
+	static int numBoards = 10;
 	static int numCornersHor = 9;
 	static int numCornersVer = 6;
 
@@ -283,6 +288,7 @@ int main() {
 
 	std::vector<cv::Point> ballPositions;
 	cv::Point predictedBallPosition;
+	cv::Point predictedBallPosition2;
 
 	while (1) {
 
@@ -338,14 +344,19 @@ int main() {
 
 			ballPositions.push_back(ballPosition);
 			predictedBallPosition = predictNextPosition(ballPositions);
+			predictedBallPosition2.x = predictedBallPosition.x + deltaX;
+			predictedBallPosition2.y = predictedBallPosition.y + deltaY;
+			
 
 			circle(frame1, ballPositions.back(), 30, Scalar(0, 0, 255), 2, 8, 0);
 			line(frame1, ballPositions.back(), predictedBallPosition, Scalar(255, 0, 0), 2, 8, 0);
 			circle(frame1, predictedBallPosition, 30, Scalar(0, 255, 0), 2, 8, 0);
+			line(frame1, predictedBallPosition, predictedBallPosition2, Scalar(255, 0, 0), 2, 8, 0);
+			circle(frame1, predictedBallPosition2, 30, Scalar(255, 0, 0), 2, 8, 0);
 
 			//write to arduino
-			//sprintf_s(buffer, "%d,%d", 0, 0);
-			//arduino.writeSerialPort(buffer, strlen(buffer));
+			sprintf_s(buffer, "%d,%d", predictedBallPosition);
+			arduino.writeSerialPort(buffer, strlen(buffer));
 		}
 
 		//show our captured frame
