@@ -19,7 +19,7 @@ using namespace cv;
 
 
 //our sensitivity value to be used in the absdiff() function
-const static int SENSITIVITY_VALUE = 10;
+const static int SENSITIVITY_VALUE = 50;
 //numeric camera postion 
 int camPos = 0;
 
@@ -269,12 +269,15 @@ int main() {
 	Mat thresholdImage;
 	//final Mat
 	Mat Final;
+	//2D rendering mat
+	Mat render;
+	//adjusted scale values for trimmed frame and render
+	int adjustX, adjustY;
+	//2d render size ints
+	int renderSizeX = 600;
+	int renderSizeY = 500;
 
 	capture.open(camPos + cv::CAP_DSHOW);
-
-	//calls the calibrate and stores the coeffs and intrisics in their respected variables
-	//Calibrate(capture);
-
 
 	if (!capture.isOpened()) {
 		cout << "ERROR ACQUIRING VIDEO FEED\n";
@@ -299,11 +302,9 @@ int main() {
 	cv::Point predictedBallPositionFar;
 
 	capture >> img;
-	//cv::remap(img, img, map1, map2, INTER_LINEAR, BORDER_CONSTANT);
 	imshow("image", img);
 
 	while (1) {
-
 		//read first frame
 		capture.read(frame1);
 		//copy second frame
@@ -312,8 +313,16 @@ int main() {
 		//create trimmed mats
 		Mat revelvantFrame1(frame1, RangeY, RangeX);
 		Mat relevantFrame2(frame2, RangeY, RangeX);
+		Mat render = Mat::zeros(Size(renderSizeX, renderSizeY), CV_8UC3);
 
-		//convert trimmed mats to gray scale for frame differencing
+		//draw ping pong table on render 
+		rectangle(render, Point(0, 0), Point(renderSizeX, renderSizeY), Scalar(255, 255, 255), FILLED);
+		rectangle(render, Point(renderSizeX / 2 + abs(RangeX.start - RangeX.end) / 2, renderSizeY / 2 + abs(RangeY.start - RangeY.end) / 2), Point(renderSizeX / 2 - abs(RangeX.start - RangeX.end) / 2, renderSizeY / 2 - abs(RangeY.start - RangeY.end) / 2), Scalar(0, 0, 0), 8);
+		rectangle(render, Point(renderSizeX/2 + abs(RangeX.start - RangeX.end) / 2, renderSizeY/2 + abs(RangeY.start - RangeY.end) / 2), Point(renderSizeX/2 - abs(RangeX.start - RangeX.end) / 2, renderSizeY/2 - abs(RangeY.start - RangeY.end) / 2), Scalar(51, 255, 51), FILLED, 1);
+		line(render, Point(renderSizeX/2 + abs(RangeX.start - RangeX.end) / 2, renderSizeY/2), Point(renderSizeX/2 - abs(RangeX.start - RangeX.end) / 2, renderSizeY/2), Scalar(255, 255, 255), 4);
+		line(render, Point(renderSizeX/2, renderSizeY/2 + abs(RangeY.start - RangeY.end) / 2), Point(renderSizeX/2, renderSizeY/2 - abs(RangeY.start - RangeY.end) / 2), Scalar(255, 255, 255), 4);
+
+		//convert trimmed mats to gray scale for frame dif23/*3ferencing
 		cv::cvtColor(revelvantFrame1, grayImage1, COLOR_BGR2GRAY);
 		cv::cvtColor(relevantFrame2, grayImage2, COLOR_BGR2GRAY);
 
@@ -330,11 +339,12 @@ int main() {
 		//threshold again to obtain binary image from blur output
 		cv::threshold(thresholdImage, thresholdImage, SENSITIVITY_VALUE, 255, THRESH_BINARY);
 
+
 		if (debugMode == true) {
 			//show the threshold image after it's been "blurred"
 			cv::imshow("Difference Image", differenceImage);
 			cv::imshow("Threshold Image", thresholdImage);
-			imshow("Final Threshold Image", thresholdImage);
+			cv::imshow("Final Threshold Image", thresholdImage);
 
 		}
 		else {
@@ -359,14 +369,23 @@ int main() {
 			predictedBallPositionFar.x = predictedBallPosition.x + deltaX * 1;
 			predictedBallPositionFar.y = predictedBallPosition.y + deltaY * 1;
 
-			//draw circles
+			//draw circles 
 			circle(revelvantFrame1, ballPosition, 10, Scalar(0, 0, 255), 2, 8, 0);
-
-			circle(revelvantFrame1, ballPosition, 10, Scalar(0, 0, 255), 2, 8, 0);
-
 			circle(revelvantFrame1, predictedBallPositionFar, 10, Scalar(0, 255, 0), 2, 8, 0);
 			line(revelvantFrame1, ballPosition, predictedBallPositionFar, Scalar(255, 0, 0), 2, 8, 0);
 
+			// X = [0 - RangeX.end] --> [0 - renderSizeX / 2 - abs(RangeX.start - RangeX.end) / 2]
+			// Y = [0 - RangeY.end] --> [0 - renderSizeY / 2 - abs(RangeY.start - RangeY.end) / 2]
+
+			adjustX = renderSizeX / 2 - abs(RangeX.start - RangeX.end) / 2;
+			adjustY = renderSizeY / 2 - abs(RangeY.start - RangeY.end) / 2;
+
+			//draw circles 
+			circle(render, Point(ballPosition.x + adjustX, ballPosition.y + adjustY), 10, Scalar(0, 0, 0), 2, 8, 0);
+			circle(render, Point(predictedBallPositionFar.x + adjustX, predictedBallPositionFar.y +adjustY), 10, Scalar(160, 160, 160), 2, 8, 0);
+			line(render, Point(ballPosition.x + adjustX, ballPosition.y + adjustY), Point(predictedBallPositionFar.x + adjustX, predictedBallPositionFar.y + adjustY), Scalar(128, 128, 128), 2, 8, 0);
+
+			//write to cout 
 			cout << ballPosition << endl;
 
 			//write to arduino
@@ -379,7 +398,12 @@ int main() {
 
 		if (select_flag == 1)
 		{
-			imshow("FINAL", revelvantFrame1); //show the image bounded by the box
+			//show trimmed frame
+			imshow("FINAL", revelvantFrame1);
+			
+			//show render frame
+			imshow("2D Rendering", render);
+
 			cv::destroyWindow("image");
 		}
 
@@ -424,7 +448,5 @@ int main() {
 		}
 
 	}
-
 	return 0;
-
 }
