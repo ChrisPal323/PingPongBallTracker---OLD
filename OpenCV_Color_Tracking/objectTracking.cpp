@@ -679,7 +679,7 @@ int main() {
 		//check to see if a button has been pressed.
 		//this 10ms delay is necessary for proper operation of this program
 		//if removed, frames will not have enough time to referesh and a blank 
-		//image will appear
+		//image will appear.
 		switch (waitKey(10)) {
 
 		case 27: //'esc' key has been pressed, exit program.
