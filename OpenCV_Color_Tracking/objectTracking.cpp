@@ -421,11 +421,6 @@ void mouseHandlerY(int event, int x, int y, int flags, void* param)
 
 }
 
-
-long map(long x, long in_min, long in_max, long out_min, long out_max) {
-	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
-
 int main() {
 
 	//some boolean variables for added functionality
@@ -503,7 +498,7 @@ int main() {
 	imshow("imageX", imgX);
 
 	captureY >> imgY;
-    imshow("imageY", imgY);
+	imshow("imageY", imgY);
 
 	while (1) {
 		//read first frame
@@ -597,132 +592,125 @@ int main() {
 		//if tracking enabled, search for contours in our thresholded image
 		if (trackingEnabled) {
 
-				searchForMovementX(thresholdImageX);
+			searchForMovementX(thresholdImageX);
 
-				searchForMovementY(thresholdImageY);
+			searchForMovementY(thresholdImageY);
 
-				//store ball position
-				ballPositionsX.push_back(ballPositionX);
-				ballPositionsY.push_back(ballPositionY);
+			//store ball position
+			ballPositionsX.push_back(ballPositionX);
+			ballPositionsY.push_back(ballPositionY);
 
-				//predict next position based on previous 
-				predictedBallPositionX = predictNextPositionX(ballPositionsX);
-				predictedBallPositionY = predictNextPositionY(ballPositionsY);
+			//predict next position based on previous 
+			predictedBallPositionX = predictNextPositionX(ballPositionsX);
+			predictedBallPositionY = predictNextPositionY(ballPositionsY);
 
-				//estimate far position 
-				predictedBallPositionFarX.x = predictedBallPositionX.x + XdeltaX * 1;
-				predictedBallPositionFarX.y = predictedBallPositionX.y + XdeltaY * 1;
+			//estimate far position 
+			predictedBallPositionFarX.x = predictedBallPositionX.x + XdeltaX * 1;
+			predictedBallPositionFarX.y = predictedBallPositionX.y + XdeltaY * 1;
 
-				predictedBallPositionFarY.x = predictedBallPositionY.x + YdeltaX * 1;
-				predictedBallPositionFarY.y = predictedBallPositionY.y + YdeltaY * 1;
+			predictedBallPositionFarY.x = predictedBallPositionY.x + YdeltaX * 1;
+			predictedBallPositionFarY.y = predictedBallPositionY.y + YdeltaY * 1;
 
-				//draw current and predicted on X frame
-				circle(revelvantFrame1X, ballPositionX, 10, Scalar(0, 0, 255), 2, 8, 0);
-				circle(revelvantFrame1X, predictedBallPositionFarX, 10, Scalar(0, 255, 0), 2, 8, 0);
-				line(revelvantFrame1X, ballPositionX, predictedBallPositionFarX, Scalar(255, 0, 0), 2, 8, 0);
+			//draw current and predicted on X frame
+			circle(revelvantFrame1X, ballPositionX, 10, Scalar(0, 0, 255), 2, 8, 0);
+			circle(revelvantFrame1X, predictedBallPositionFarX, 10, Scalar(0, 255, 0), 2, 8, 0);
+			line(revelvantFrame1X, ballPositionX, predictedBallPositionFarX, Scalar(255, 0, 0), 2, 8, 0);
 
-				//draw current and predicted on Y frame
-				circle(revelvantFrame1Y, ballPositionY, 10, Scalar(0, 0, 255), 2, 8, 0);
-				circle(revelvantFrame1Y, predictedBallPositionFarY, 10, Scalar(0, 255, 0), 2, 8, 0);
-				line(revelvantFrame1Y, ballPositionY, predictedBallPositionFarY, Scalar(255, 0, 0), 2, 8, 0);
+			//draw current and predicted on Y frame
+			circle(revelvantFrame1Y, ballPositionY, 10, Scalar(0, 0, 255), 2, 8, 0);
+			circle(revelvantFrame1Y, predictedBallPositionFarY, 10, Scalar(0, 255, 0), 2, 8, 0);
+			line(revelvantFrame1Y, ballPositionY, predictedBallPositionFarY, Scalar(255, 0, 0), 2, 8, 0);
 
-				//------------------------- Drawing on render frame ---------------------------//
+			//------------------------- Drawing on render frame ---------------------------//
 
-				// we must shift over the coords in relevant frame to match the table in render 
-				// X = [0 - RangeX.end] --> [0 - renderSizeX / 2 - abs(RangeX.start - RangeX.end) / 2]
-				// Y = [0 - RangeY.end] --> [0 - renderSizeY / 2 - abs(RangeY.start - RangeY.end) / 2]
+			//adjust values for tracking coordinates
+			adjustTopX = renderSizeX / 2 - abs(xRangeX.start - xRangeX.end) / 2;
+			adjustTopY = 70;
 
-				adjustTopX = renderSizeX / 2 - abs(xRangeX.start - xRangeX.end) / 2;
-				adjustTopY = 70;
+			adjustSideX = renderSizeX / 2 - abs(xRangeY.start - xRangeY.end) / 2;
+			adjustSideY = abs(abs(yRangeX.start - yRangeX.end) - (renderSizeY - 100));
 
-				adjustSideX = renderSizeX / 2 - abs(xRangeY.start - xRangeY.end) / 2;
-				adjustSideY = abs(abs(yRangeX.start - yRangeX.end) - (renderSizeY - 100));
+			//draw circles for Top View
+			circle(render, Point(ballPositionX.x + adjustTopX, ballPositionX.y + adjustTopY), 10, Scalar(0, 0, 0), 2, 8, 0);
+			circle(render, Point(predictedBallPositionFarX.x + adjustTopX, predictedBallPositionFarX.y + adjustTopY), 10, Scalar(160, 160, 160), 2, 8, 0);
+			line(render, Point(ballPositionX.x + adjustTopX, ballPositionX.y + adjustTopY), Point(predictedBallPositionFarX.x + adjustTopX, predictedBallPositionFarX.y + adjustTopY), Scalar(128, 128, 128), 2, 8, 0);
 
-				//draw circles for Top View
-				circle(render, Point(ballPositionX.x + adjustTopX, ballPositionX.y + adjustTopY), 10, Scalar(0, 0, 0), 2, 8, 0);
-				circle(render, Point(predictedBallPositionFarX.x + adjustTopX, predictedBallPositionFarX.y +adjustTopY), 10, Scalar(160, 160, 160), 2, 8, 0);
-				line(render, Point(ballPositionX.x + adjustTopX, ballPositionX.y + adjustTopY), Point(predictedBallPositionFarX.x + adjustTopX, predictedBallPositionFarX.y + adjustTopY), Scalar(128, 128, 128), 2, 8, 0);
+			//draw circles for side view 
+			circle(render, Point(ballPositionY.x + adjustSideX, ballPositionY.y + adjustSideY), 10, Scalar(0, 0, 0), 2, 8, 0);
+			circle(render, Point(predictedBallPositionFarY.x + adjustSideX, predictedBallPositionFarY.y + adjustSideY), 10, Scalar(160, 160, 160), 2, 8, 0);
+			line(render, Point(ballPositionY.x + adjustSideX, ballPositionY.y + adjustSideY), Point(predictedBallPositionFarY.x + adjustSideX, predictedBallPositionFarY.y + adjustSideY), Scalar(128, 128, 128), 2, 8, 0);
 
-				circle(render, Point(ballPositionY.x + adjustSideX, ballPositionY.y + adjustSideY), 10, Scalar(0, 0, 0), 2, 8, 0);
-				circle(render, Point(predictedBallPositionFarY.x + adjustSideX, predictedBallPositionFarY.y + adjustSideY), 10, Scalar(160, 160, 160), 2, 8, 0);
-				line(render, Point(ballPositionY.x + adjustSideX, ballPositionY.y + adjustSideY), Point(predictedBallPositionFarY.x + adjustSideX, predictedBallPositionFarY.y + adjustSideY), Scalar(128, 128, 128), 2, 8, 0);
+			//show render frame
+			imshow("2D Rendering", render);
 
+			//write to cout 
+			cout << ballPositionY << endl;
 
+			//write to arduino
+			sprintf_s(buffer, "%d,%d", ballPositionX);
+			arduino.writeSerialPort(buffer, strlen(buffer));
+		}
 
-				//draw circles for side view 
-				circle(render, Point(renderSizeX / 2 - abs(xRangeY.start - xRangeY.end) / 2, renderSizeY - 100), 10, Scalar(0, 0, 0), 2, 8, 0);
+		//show our captured frame
+		cv::setMouseCallback("imageX", mouseHandlerX, NULL);
+		cv::setMouseCallback("imageY", mouseHandlerY, NULL);
 
-				//show render frame
-				imshow("2D Rendering", render);
+		if (select_flagX == 1)
+		{
+			//show the image bounded by the box
+			imshow("FINAL TOP-VIEW", revelvantFrame1X);
 
-				//write to cout 
-				cout << ballPositionY << endl;
+			//remove trim mats
+			cv::destroyWindow("imageX");
+		}
 
-				//write to arduino
-				sprintf_s(buffer, "%d,%d", ballPositionX);
-				arduino.writeSerialPort(buffer, strlen(buffer));
-			}
+		if (select_flagY == 1)
+		{
+			//show the image bounded by the box
+			imshow("FINAL SIDE-VIEW", revelvantFrame1Y);
 
-			//show our captured frame
-			cv::setMouseCallback("imageX", mouseHandlerX, NULL);
-			cv::setMouseCallback("imageY", mouseHandlerY, NULL);
+			//show render frame
+			imshow("2D Rendering", render);
 
-			if (select_flagX == 1)
-			{
-				//show the image bounded by the box
-				imshow("FINAL TOP-VIEW", revelvantFrame1X);
+			//remove trim mats
+			cv::destroyWindow("imageY");
+		}
 
-				//remove trim mats
-				cv::destroyWindow("imageX");
-			}
+		//check to see if a button has been pressed.
+		//this 10ms delay is necessary for proper operation of this program
+		//if removed, frames will not have enough time to referesh and a blank 
+		//image will appear.
+		switch (waitKey(10)) {
 
-			if (select_flagY == 1)
-			{
-				//show the image bounded by the box
-				imshow("FINAL SIDE-VIEW", revelvantFrame1Y);
-
-				//show render frame
-				imshow("2D Rendering", render);
-
-				//remove trim mats
-				cv::destroyWindow("imageY");
-			}
-
-			//check to see if a button has been pressed.
-			//this 10ms delay is necessary for proper operation of this program
-			//if removed, frames will not have enough time to referesh and a blank 
-			//image will appear.
-			switch (waitKey(10)) {
-
-			case 27: //'esc' key has been pressed, exit program.
-				return 0;
-			case 116: //'t' has been pressed. this will toggle tracking
-				trackingEnabled = !trackingEnabled;
-				if (trackingEnabled == false) cout << "Tracking disabled." << endl;
-				else cout << "Tracking enabled." << endl;
-				break;
-			case 100: //'d' has been pressed. this will debug mode
-				debugMode = !debugMode;
-				if (debugMode == false) cout << "Debug mode disabled." << endl;
-				else cout << "Debug mode enabled." << endl;
-				break;
-			case 112: //'p' has been pressed. this will pause/resume the code.
-				pause = !pause;
-				if (pause == true) {
-					cout << "Code paused, press 'p' again to resume" << endl;
-					while (pause == true) {
-						//stay in this loop until 
-						switch (waitKey()) {
-							//a switch statement inside a switch statement? Mind blown.
-						case 112:
-							//change pause back to false
-							pause = false;
-							cout << "Code Resumed" << endl;
-							break;
-						}
+		case 27: //'esc' key has been pressed, exit program.
+			return 0;
+		case 116: //'t' has been pressed. this will toggle tracking
+			trackingEnabled = !trackingEnabled;
+			if (trackingEnabled == false) cout << "Tracking disabled." << endl;
+			else cout << "Tracking enabled." << endl;
+			break;
+		case 100: //'d' has been pressed. this will debug mode
+			debugMode = !debugMode;
+			if (debugMode == false) cout << "Debug mode disabled." << endl;
+			else cout << "Debug mode enabled." << endl;
+			break;
+		case 112: //'p' has been pressed. this will pause/resume the code.
+			pause = !pause;
+			if (pause == true) {
+				cout << "Code paused, press 'p' again to resume" << endl;
+				while (pause == true) {
+					//stay in this loop until 
+					switch (waitKey()) {
+						//a switch statement inside a switch statement? Mind blown.
+					case 112:
+						//change pause back to false
+						pause = false;
+						cout << "Code Resumed" << endl;
+						break;
 					}
 				}
 			}
 		}
+	}
 	return 0;
 }
